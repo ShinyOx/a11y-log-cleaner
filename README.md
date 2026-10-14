@@ -1,20 +1,65 @@
-# hey, i'm siddharth datla 🛠️
+# a11y-log-cleaner
 
-i'm a 15-year-old student from coppell, texas. i am deeply passionate about computer science, working on data pipelines, and figuring out how to control hardware systems without breaking them. 
+A Python/Pandas pipeline that cleans and summarizes interaction logs from an AI-assisted 3D modeling tool for blind and low-vision (BLV) users, modeled on the kind of system described in the A11yShape paper (OpenSCAD plus an LLM assistant).
 
-right now, i'm focused on learning how to bridge raw code with real-world physical systems—whether that's a lunar rover simulation or a competitive frc robot chassis.
+> **All data in this repo is synthetic.** I don't have access to any real study data. The log formats are my own guess at what such a tool might record, built to practice research-grade data cleaning. Column names would need to be adapted to a real logger.
 
-## 🚀 what i'm working on right now
-- **machine learning lead @ nasa hunch (llaso project 4):** building a predictive maintenance model using scikit-learn that flags when lunar robot motors are going to overheat before they actually fail. optimized it to cut baseline prediction errors by half.
-- **sub-team programmer @ frc wheelhouse:** writing object-oriented control logic and messing with wpilib to coordinate multi-motor acceleration profiles and handle real-time sensor feedback under crunch time.
-- **independent projects:** writing lightweight data cleaning pipelines (using pandas and numpy) to handle messy logging telemetry from human-computer interaction tests.
+## What it does
 
-## 🧰 my stack & tools
-- **languages:** python, basic java / c++ logic, and markdown.
-- **libraries:** pandas, numpy, scikit-learn.
-- **environments:** git, github, vs code, anaconda, jupyter notebooks, and command line.
+It takes two raw logs:
 
-## 📁 featured repo
-- [hci-data-pipeline](https://github.com) — a clunky but fully working data-cleaning script i wrote over a weekend to automate sorting, filtering out background system noise, and patching laggy timestamps in raw user logs.
+| Log | One row per | Key columns |
+|---|---|---|
+| OpenSCAD edit log | editor event (code edit, render, undo, hierarchy selection, description request, version save) | `session_id`, `timestamp`, `event_type`, `input_modality`, `render_ms` |
+| LLM request log | request sent to the AI assistant | `request_id`, `sent_at`, `received_at`, `request_type`, `status` |
 
-thanks for dropping by my profile! feel free to look through my repositories or check out my code updates.
+And produces:
+
+| Output | Contents |
+|---|---|
+| `clean_edit_log.csv` | cleaned editor events, sorted by session and time |
+| `clean_llm_log.csv` | cleaned LLM requests with computed `latency_ms` and `n_attempts` |
+| `session_summary.csv` | one row per session: duration, edits, render error rate, screen-reader share, LLM failure rate, median LLM latency |
+| `excluded_rows.csv` | every row removed, with the reason |
+| `qc_report.json` | counts of every row removed or flagged, by reason |
+
+## Cleaning rules
+
+- **No invented data.** Impossible values (negative render time, received-before-sent clock skew) are set to missing and flagged in a `qc_flag` column. They are not replaced with a median or guess.
+- **No silent drops.** Every removed row goes to `excluded_rows.csv` with a reason: exact duplicate, missing session ID, unparseable timestamp, system event, unknown event type, or superseded by a retry.
+- **Keyboard and screen-reader input is real user input.** BLV users don't click and drag, so only system heartbeats are excluded from activity counts.
+- **Retries are collapsed.** Requests that share a `request_id` keep the final attempt, and `n_attempts` records how many tries it took.
+- **Raw files are never overwritten.** Outputs go to a separate folder.
+
+## Run it
+
+Requires Python 3.10+ with pandas and numpy.
+
+```bash
+pip install pandas numpy
+
+# Generate synthetic logs with realistic problems injected, then clean them
+python data_pipeline.py --demo
+
+# Or clean your own CSVs that use the same columns
+python data_pipeline.py --edits edits.csv --llm llm.csv --out output
+```
+
+## Example QC result (from `--demo`)
+
+From 312 raw edit rows and 48 raw LLM rows, the pipeline:
+
+- removed 5 duplicate edit rows, 3 with a missing session ID, 2 with corrupt timestamps, and 29 system heartbeats
+- flagged 3 impossible render times without deleting the events
+- collapsed 2 retried LLM requests and removed 2 duplicate request rows
+- flagged 2 requests with clock skew (received before sent) and left their latency blank
+
+## What I'd add next
+
+- Validate against a real logger's schema once one is available
+- Link each LLM request to the edit event that triggered it
+- Unit tests for each cleaning rule
+
+## About
+
+Built by Siddharth Datla, a sophomore at Coppell High School.
